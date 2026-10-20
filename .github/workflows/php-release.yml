@@ -1,0 +1,55 @@
+name: PHP release notifier
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: php-release-notifier
+  cancel-in-progress: false
+
+env:
+  # Set to "true" to also notify on alpha/beta/RC tags.
+  INCLUDE_PRERELEASES: "false"
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for a new PHP release
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+        run: scripts/check_php_release.sh
+
+      # GitHub disables scheduled workflows after 60 days without repo
+      # activity. Releases normally commit often enough, but if the last
+      # commit is older than 45 days, push a keepalive commit.
+      - name: Keepalive
+        run: |
+          age_days=$(( ( $(date +%s) - $(git log -1 --format=%ct) ) / 86400 ))
+          if [ "$age_days" -ge 45 ]; then
+            date -u +%Y-%m-%dT%H:%M:%SZ > state/keepalive.txt
+          fi
+
+      - name: Commit and push state
+        run: |
+          if [ -z "$(git status --porcelain state/)" ]; then
+            echo "No state changes"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add state/
+          git commit -m "chore: update PHP release state [skip ci]"
+          for i in 1 2 3; do
+            git push && exit 0
+            git pull --rebase
+          done
+          exit 1

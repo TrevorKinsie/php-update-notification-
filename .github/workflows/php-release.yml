@@ -1,5 +1,6 @@
 name: PHP release notifier
 
+# Scheduled runs only start from the default branch (main).
 on:
   schedule:
     - cron: "*/5 * * * *"
